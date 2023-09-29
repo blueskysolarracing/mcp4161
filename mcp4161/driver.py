@@ -17,25 +17,44 @@ class MCP4161:
         VOLATILE_WIPER_0: int = 0b0000
         """The volatile wiper 0."""
         NON_VOLATILE_WIPER_0: int = 0b0010
-        """The non-volatile wiper 1."""
+        """The non-volatile wiper 0."""
+        VOLATILE_TCON_REGISTER: int = 0b0010
+        """The volatile TCON register."""
+        STATUS_REGISTER: int = 0b0010
+        """The status register."""
 
     class CommandBits(IntEnum):
         """The enum class for command bits."""
 
-        WRITE_DATA: int = 0b00
-        """The write data command."""
         READ_DATA: int = 0b11
         """The read data command."""
+        WRITE_DATA: int = 0b00
+        """The write data command."""
+        INCREMENT: int = 0b01
+        """The increment command."""
+        DECREMENT: int = 0b10
+        """The decrement command."""
 
     STEP_RANGE: ClassVar[range] = range(257)
+    """The step range."""
     spi: SPI
     """The SPI."""
 
-    def write_data(
-            self,
-            memory_address: MemoryAddress,
-            data: int,
-    ) -> list[int]:
+    def read_data(self, memory_address: int) -> list[int]:
+        """Read the data at the memory address.
+
+        :param memory_address: The memory address.
+        :return: The read data.
+        """
+        raise NotImplementedError('reading not supported')
+
+    def write_data(self, memory_address: int, data: int) -> None:
+        """Write the data at the memory address.
+
+        :param memory_address: The memory address.
+        :param data: The data.
+        :return: ``None``.
+        """
         transmitted_data = [
             (
                 (memory_address << 4)
@@ -45,13 +64,39 @@ class MCP4161:
             data & ((1 << 8) - 1),
         ]
 
-        received_data = self.spi.transfer(transmitted_data)
+        self.spi.transfer(transmitted_data)
 
-        assert isinstance(received_data, list)
+    def increment(self, memory_address: int) -> None:
+        """Increment the data at the memory address.
 
-        return received_data
+        :param memory_address: The memory address.
+        :return: ``None``.
+        """
+        transmitted_data = [
+            (memory_address << 4) | (self.CommandBits.INCREMENT << 2),
+        ]
+
+        self.spi.transfer(transmitted_data)
+
+    def decrement(self, memory_address: int) -> None:
+        """Decrement the data at the memory address.
+
+        :param memory_address: The memory address.
+        :return: ``None``.
+        """
+        transmitted_data = [
+            (memory_address << 4) | (self.CommandBits.DECREMENT << 2),
+        ]
+
+        self.spi.transfer(transmitted_data)
 
     def set_step(self, step: int, eeprom: bool = False) -> None:
+        """Set the volatile or non-volatile wiper step.
+
+        :param step: The step.
+        :param eeprom: ``True`` if non-volatile, otherwise ``False``.
+        :return: ``None``.
+        """
         if eeprom:
             memory_address = self.MemoryAddress.NON_VOLATILE_WIPER_0
         else:
