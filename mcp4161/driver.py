@@ -15,13 +15,13 @@ class MCP4161:
     class MemoryAddress(IntEnum):
         """The enum class for memory addresses."""
 
-        VOLATILE_WIPER_0: int = 0b0000
+        VOLATILE_WIPER_0: int = 0x00
         """The volatile wiper 0."""
-        NON_VOLATILE_WIPER_0: int = 0b0010
+        NON_VOLATILE_WIPER_0: int = 0x02
         """The non-volatile wiper 0."""
-        VOLATILE_TCON_REGISTER: int = 0b0010
+        VOLATILE_TCON_REGISTER: int = 0x04
         """The volatile TCON register."""
-        STATUS_REGISTER: int = 0b0010
+        STATUS_REGISTER: int = 0x05
         """The status register."""
 
     class CommandBits(IntEnum):
