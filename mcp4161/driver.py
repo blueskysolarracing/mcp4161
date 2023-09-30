@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import ClassVar
+from warnings import warn
 
 from periphery import SPI
 
@@ -35,10 +36,35 @@ class MCP4161:
         DECREMENT: int = 0b10
         """The decrement command."""
 
+    SPI_MODES: ClassVar[tuple[int, int]] = 0b00, 0b11
+    """The supported spi modes."""
+    MAX_SPI_MAX_SPEED: ClassVar[float] = 10e6
+    """The supported maximum spi maximum speed."""
+    SPI_BIT_ORDER: ClassVar[str] = 'msb'
+    """The supported spi bit order."""
+    SPI_WORD_BIT_COUNT: ClassVar[int] = 8
+    """The supported spi number of bits per word."""
     STEP_RANGE: ClassVar[range] = range(257)
     """The step range."""
+    MEMORY_ADDRESS_OFFSET: ClassVar[int] = 4
+    """The memory address offset for the command byte."""
+    COMMAND_BITS_OFFSET: ClassVar[int] = 2
+    """The command bits offset for the command byte."""
     spi: SPI
     """The SPI."""
+
+    def __post_init__(self) -> None:
+        if self.spi.mode not in self.SPI_MODES:
+            raise ValueError('unsupported spi mode')
+        elif self.spi.max_speed > self.MAX_SPI_MAX_SPEED:
+            raise ValueError('unsupported spi maximum speed')
+        elif self.spi.bit_order != self.SPI_BIT_ORDER:
+            raise ValueError('unsupported spi bit order')
+        elif self.spi.bits_per_word != self.SPI_WORD_BIT_COUNT:
+            raise ValueError('unsupported spi number of bits per word')
+
+        if self.spi.extra_flags:
+            warn(f'unknown spi extra flags {self.spi.extra_flags}')
 
     def read_data(self, memory_address: int) -> list[int]:
         """Read the data at the memory address.
@@ -57,11 +83,11 @@ class MCP4161:
         """
         transmitted_data = [
             (
-                (memory_address << 4)
-                | (self.CommandBits.WRITE_DATA << 2)
-                | (data >> 8)
+                (memory_address << self.MEMORY_ADDRESS_OFFSET)
+                | (self.CommandBits.WRITE_DATA << self.COMMAND_BITS_OFFSET)
+                | (data >> self.SPI_WORD_BIT_COUNT)
             ),
-            data & ((1 << 8) - 1),
+            data & ((1 << self.SPI_WORD_BIT_COUNT) - 1),
         ]
 
         self.spi.transfer(transmitted_data)
@@ -73,7 +99,8 @@ class MCP4161:
         :return: ``None``.
         """
         transmitted_data = [
-            (memory_address << 4) | (self.CommandBits.INCREMENT << 2),
+            (memory_address << self.MEMORY_ADDRESS_OFFSET)
+            | (self.CommandBits.INCREMENT << self.COMMAND_BITS_OFFSET),
         ]
 
         self.spi.transfer(transmitted_data)
@@ -85,7 +112,8 @@ class MCP4161:
         :return: ``None``.
         """
         transmitted_data = [
-            (memory_address << 4) | (self.CommandBits.DECREMENT << 2),
+            (memory_address << self.MEMORY_ADDRESS_OFFSET)
+            | (self.CommandBits.DECREMENT << self.COMMAND_BITS_OFFSET),
         ]
 
         self.spi.transfer(transmitted_data)
