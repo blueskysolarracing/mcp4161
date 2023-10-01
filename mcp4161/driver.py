@@ -66,13 +66,28 @@ class MCP4161:
         if self.spi.extra_flags:
             warn(f'unknown spi extra flags {self.spi.extra_flags}')
 
-    def read_data(self, memory_address: int) -> list[int]:
+    def read_data(self, memory_address: int) -> int:
         """Read the data at the memory address.
 
         :param memory_address: The memory address.
         :return: The read data.
         """
-        raise NotImplementedError('reading not supported')
+        transmitted_data = [
+            (
+                (memory_address << self.MEMORY_ADDRESS_OFFSET)
+                | (self.CommandBits.WRITE_DATA << self.COMMAND_BITS_OFFSET)
+                | ((1 << self.COMMAND_BITS_OFFSET) - 1)
+            ),
+            (1 << self.SPI_WORD_BIT_COUNT) - 1,
+        ]
+
+        received_data = self.spi.transfer(transmitted_data)
+
+        assert isinstance(received_data, list)
+
+        received_data[0] &= (1 << self.COMMAND_BITS_OFFSET) - 1
+
+        return (received_data[0] << self.SPI_WORD_BIT_COUNT) | received_data[1]
 
     def write_data(self, memory_address: int, data: int) -> None:
         """Write the data at the memory address.
