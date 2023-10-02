@@ -7,7 +7,7 @@ with open('README.rst', 'r') as file:
 
 setup(
     name='mcp4161',
-    version='0.0.0.dev5',
+    version='0.0.0.dev6',
     description='A Python driver for Microchip Technology MCP4161 7/8-Bit Single/Dual SPI Digital POT with Non-Volatile Memory',
     long_description=long_description,
     long_description_content_type='text/x-rst',

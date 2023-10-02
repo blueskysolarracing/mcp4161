@@ -29,8 +29,6 @@ class MCP4161:
     class Command(ABC):
         """The abstract base class class for commands."""
 
-        WORD_COUNT: ClassVar[int]
-        """The number of words."""
         COMMAND_BITS: ClassVar[int]
         """The command bits."""
         memory_address: int
@@ -49,7 +47,7 @@ class MCP4161:
     class SixteenBitCommand(Command, ABC):
         """The abstract base class for 8-bit commands."""
 
-        WORD_COUNT: ClassVar[int] = 2
+        pass
 
     @dataclass
     class ReadData(SixteenBitCommand):
@@ -102,8 +100,6 @@ class MCP4161:
     @dataclass
     class EightBitCommand(Command, ABC):
         """The abstract base class for 8-bit commands."""
-
-        WORD_COUNT: ClassVar[int] = 1
 
         @property
         def transmitted_data(self) -> list[int]:
@@ -176,8 +172,10 @@ class MCP4161:
         begin = 0
 
         for command in commands:
-            end = begin + command.WORD_COUNT
+            end = begin + len(command.transmitted_data)
+
             parsed_data.append(command.parse(received_data[begin:end]))
+
             begin = end
 
         return parsed_data
