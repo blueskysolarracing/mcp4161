@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import ClassVar
@@ -24,17 +25,110 @@ class MCP4161:
         STATUS_REGISTER: int = 0x05
         """The status register."""
 
-    class CommandBits(IntEnum):
-        """The enum class for command bits."""
+    @dataclass
+    class Command(ABC):
+        """The abstract base class class for commands."""
 
-        READ_DATA: int = 0b11
-        """The read data command."""
-        WRITE_DATA: int = 0b00
-        """The write data command."""
-        INCREMENT: int = 0b01
-        """The increment command."""
-        DECREMENT: int = 0b10
-        """The decrement command."""
+        WORD_COUNT: ClassVar[int]
+        """The number of words."""
+        COMMAND_BITS: ClassVar[int]
+        """The command bits."""
+        memory_address: int
+        """The memory address."""
+
+        @property
+        @abstractmethod
+        def transmitted_data(self) -> list[int]:
+            pass
+
+        @abstractmethod
+        def parse(self, received_data: list[int]) -> int | None:
+            pass
+
+    @dataclass
+    class SixteenBitCommand(Command, ABC):
+        """The abstract base class for 8-bit commands."""
+
+        WORD_COUNT: ClassVar[int] = 2
+
+    @dataclass
+    class ReadData(SixteenBitCommand):
+        """The class for read data commands."""
+
+        COMMAND_BITS: ClassVar[int] = 0b11
+
+        @property
+        def transmitted_data(self) -> list[int]:
+            return [
+                (
+                    (self.memory_address << MCP4161.MEMORY_ADDRESS_OFFSET)
+                    | (self.COMMAND_BITS << MCP4161.COMMAND_BITS_OFFSET)
+                    | ((1 << MCP4161.COMMAND_BITS_OFFSET) - 1)
+                ),
+                (1 << MCP4161.SPI_WORD_BIT_COUNT) - 1,
+            ]
+
+        def parse(self, received_data: list[int]) -> int:
+            return (
+                (
+                    (received_data[0] << MCP4161.SPI_WORD_BIT_COUNT)
+                    | received_data[1]
+                )
+                & ((1 << MCP4161.DATA_BIT_COUNT) - 1)
+            )
+
+    @dataclass
+    class WriteData(SixteenBitCommand):
+        """The class for read data commands."""
+
+        COMMAND_BITS: ClassVar[int] = 0b00
+        data: int
+        """The data."""
+
+        @property
+        def transmitted_data(self) -> list[int]:
+            return [
+                (
+                    (self.memory_address << MCP4161.MEMORY_ADDRESS_OFFSET)
+                    | (self.COMMAND_BITS << MCP4161.COMMAND_BITS_OFFSET)
+                    | (self.data >> MCP4161.SPI_WORD_BIT_COUNT)
+                ),
+                self.data & ((1 << MCP4161.SPI_WORD_BIT_COUNT) - 1),
+            ]
+
+        def parse(self, received_data: list[int]) -> None:
+            return None
+
+    @dataclass
+    class EightBitCommand(Command, ABC):
+        """The abstract base class for 8-bit commands."""
+
+        WORD_COUNT: ClassVar[int] = 1
+
+        @property
+        def transmitted_data(self) -> list[int]:
+            return [
+                (self.memory_address << MCP4161.MEMORY_ADDRESS_OFFSET)
+                | (self.COMMAND_BITS << MCP4161.COMMAND_BITS_OFFSET),
+            ]
+
+    @dataclass
+    class Increment(EightBitCommand):
+        """The class for increment commands."""
+
+        COMMAND_BITS: ClassVar[int] = 0b01
+
+        def parse(self, received_data: list[int]) -> None:
+            return None
+
+    @dataclass
+    class Decrement(EightBitCommand):
+        """The class for decrement commands."""
+
+        COMMAND_BITS: ClassVar[int] = 0b10
+
+        def parse(self, received_data: list[int]) -> None:
+            return None
 
     SPI_MODES: ClassVar[tuple[int, int]] = 0b00, 0b11
     """The supported spi modes."""
@@ -44,12 +138,14 @@ class MCP4161:
     """The supported spi bit order."""
     SPI_WORD_BIT_COUNT: ClassVar[int] = 8
     """The supported spi number of bits per word."""
-    STEP_RANGE: ClassVar[range] = range(257)
-    """The step range."""
     MEMORY_ADDRESS_OFFSET: ClassVar[int] = 4
     """The memory address offset for the command byte."""
     COMMAND_BITS_OFFSET: ClassVar[int] = 2
     """The command bits offset for the command byte."""
+    DATA_BIT_COUNT: ClassVar[int] = 9
+    """The supported number of data bits."""
+    STEP_RANGE: ClassVar[range] = range(257)
+    """The step range."""
     spi: SPI
     """The SPI."""
 
@@ -66,28 +162,37 @@ class MCP4161:
         if self.spi.extra_flags:
             warn(f'unknown spi extra flags {self.spi.extra_flags}')
 
+    def command(self, *commands: Command) -> list[int | None]:
+        transmitted_data = []
+
+        for command in commands:
+            transmitted_data.extend(command.transmitted_data)
+
+        received_data = self.spi.transfer(transmitted_data)
+
+        assert isinstance(received_data, list)
+
+        parsed_data = []
+        begin = 0
+
+        for command in commands:
+            end = begin + command.WORD_COUNT
+            parsed_data.append(command.parse(received_data[begin:end]))
+            begin = end
+
+        return parsed_data
+
     def read_data(self, memory_address: int) -> int:
         """Read the data at the memory address.
 
         :param memory_address: The memory address.
         :return: The read data.
         """
-        transmitted_data = [
-            (
-                (memory_address << self.MEMORY_ADDRESS_OFFSET)
-                | (self.CommandBits.WRITE_DATA << self.COMMAND_BITS_OFFSET)
-                | ((1 << self.COMMAND_BITS_OFFSET) - 1)
-            ),
-            (1 << self.SPI_WORD_BIT_COUNT) - 1,
-        ]
+        datum = self.command(self.ReadData(memory_address))[0]
 
-        received_data = self.spi.transfer(transmitted_data)
+        assert datum is not None
 
-        assert isinstance(received_data, list)
-
-        received_data[0] &= (1 << self.COMMAND_BITS_OFFSET) - 1
-
-        return (received_data[0] << self.SPI_WORD_BIT_COUNT) | received_data[1]
+        return datum
 
     def write_data(self, memory_address: int, data: int) -> None:
         """Write the data at the memory address.
@@ -96,16 +201,7 @@ class MCP4161:
         :param data: The data.
         :return: ``None``.
         """
-        transmitted_data = [
-            (
-                (memory_address << self.MEMORY_ADDRESS_OFFSET)
-                | (self.CommandBits.WRITE_DATA << self.COMMAND_BITS_OFFSET)
-                | (data >> self.SPI_WORD_BIT_COUNT)
-            ),
-            data & ((1 << self.SPI_WORD_BIT_COUNT) - 1),
-        ]
-
-        self.spi.transfer(transmitted_data)
+        self.command(self.WriteData(memory_address, data))
 
     def increment(self, memory_address: int) -> None:
         """Increment the data at the memory address.
@@ -113,12 +209,7 @@ class MCP4161:
         :param memory_address: The memory address.
         :return: ``None``.
         """
-        transmitted_data = [
-            (memory_address << self.MEMORY_ADDRESS_OFFSET)
-            | (self.CommandBits.INCREMENT << self.COMMAND_BITS_OFFSET),
-        ]
-
-        self.spi.transfer(transmitted_data)
+        self.command(self.Increment(memory_address))
 
     def decrement(self, memory_address: int) -> None:
         """Decrement the data at the memory address.
@@ -126,12 +217,7 @@ class MCP4161:
         :param memory_address: The memory address.
         :return: ``None``.
         """
-        transmitted_data = [
-            (memory_address << self.MEMORY_ADDRESS_OFFSET)
-            | (self.CommandBits.DECREMENT << self.COMMAND_BITS_OFFSET),
-        ]
-
-        self.spi.transfer(transmitted_data)
+        self.command(self.Decrement(memory_address))
 
     def set_step(self, step: int, eeprom: bool = False) -> None:
         """Set the volatile or non-volatile wiper step.
